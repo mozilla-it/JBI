@@ -1,0 +1,61 @@
+#!/bin/bash
+
+set -ex
+
+# IS DEPLOYABLE BRANCH?
+if [[ ! "$BRANCH_NAME" = "main" && ! "$BRANCH_NAME" = "prod" ]]; then
+	echo "$BRANCH_NAME is not a deployable branch. Stopping."
+	exit 0
+fi
+
+# DEFAULT TO dev
+ENV=dev
+DOMAIN=api.data.allizom.org
+JIRA_BASE_URL=https://mozit-test.atlassian.net
+BUGZILLA_BASE_URL=https://bugzilla-dev.allizom.org/
+
+# IS PROD DEPLOY?
+if [[ "$BRANCH_NAME" = "prod" ]]; then
+	ENV=$BRANCH_NAME
+	DOMAIN=api.data.mozilla.org
+    JIRA_BASE_URL=https://mozilla-hub.atlassian.net
+	BUGZILLA_BASE_URL=https://bugzilla.mozilla.org/
+fi
+
+# VARS
+PROJ_ENV=mozilla-api-${ENV}
+ENV_ZONE=mozilla-api-${ENV}-zone
+NAMESPACE=jira-bugzilla-integration
+SVC_NAME=jira-bugzilla-integration
+SECRET_NAME=jbi-service-account-secrets
+SECRET_NAME_JBI=jbi-secrets
+
+# GCLOUD SETUP
+gcloud config set project "${PROJ_ENV}"
+stuff=($(gcloud container clusters list | grep "${PROJ_ENV}" | awk '{print $1,$2}'))
+cluster=${stuff[0]}
+zone=${stuff[1]}
+gcloud container clusters get-credentials $cluster --zone=$zone
+
+# K8 NAMESPACE
+cp infra/k8s/ns.yaml infra/k8s/ns-${PROJ_ENV}.yaml
+sed -i -e "s|@NAMESPACE@|$NAMESPACE|g" infra/k8s/ns-${PROJ_ENV}.yaml
+kubectl apply -f infra/k8s/ns-${PROJ_ENV}.yaml
+
+# K8 SECRET
+cp infra/k8s/secret.txt infra/k8s/secret-${PROJ_ENV}.json
+sed -i -e "s|@NAMESPACE@|$NAMESPACE|g" -e "s|@SECRET_NAME@|$SECRET_NAME|g" -e "s|@SECRET_JSON_VALUE@|$(gcloud beta secrets versions access latest --secret=${SECRET_NAME} --project=${PROJ_ENV})|g" infra/k8s/secret-${PROJ_ENV}.json
+kubectl apply -f infra/k8s/secret-${PROJ_ENV}.json
+
+# K8 SECRET
+cp infra/k8s/secret.txt infra/k8s/secret-jbi-${PROJ_ENV}.json
+sed -i -e "s|@NAMESPACE@|$NAMESPACE|g" -e "s|@SECRET_NAME@|$SECRET_NAME_JBI|g" -e "s|@SECRET_JSON_VALUE@|$(gcloud beta secrets versions access latest --secret=${SECRET_NAME_JBI} --project=${PROJ_ENV})|g" infra/k8s/secret-jbi-${PROJ_ENV}.json
+kubectl apply -f infra/k8s/secret-jbi-${PROJ_ENV}.json
+
+# K8 DEPLOYMENT
+cp infra/k8s/deploy.yaml infra/k8s/deploy-${PROJ_ENV}.yaml
+sed -i -e "s|@SHORT_SHA@|$SHORT_SHA|g" -e "s|@NAMESPACE@|$NAMESPACE|g" -e "s|@SVC_NAME@|$SVC_NAME|g" -e "s|@PROJECT@|${PROJ_ENV}|g" -e "s|@GOOGLE_CLOUD_PROJECT@|$PROJ_ENV|g" -e "s|@SECRET_NAME@|$SECRET_NAME|g" -e "s|@SECRET_NAME_JBI@|$SECRET_NAME_JBI|g" -e "s|@JIRA_EVENT_SERVICE_URL@|$JIRA_EVENT_SERVICE_URL|g" -e "s|@TO_JIRA_PROJECT@|$TO_JIRA_PROJECT|g" -e "s|@JIRA_BASE_URL@|$JIRA_BASE_URL|g" -e "s|@BUGZILLA_BASE_URL@|$BUGZILLA_BASE_URL|g" infra/k8s/deploy-${PROJ_ENV}.yaml
+kubectl apply -f infra/k8s/deploy-${PROJ_ENV}.yaml
+
+# FIN DEPLOYMENT
+kubectl -n${SVC_NAME} set env deployments/${SVC_NAME} DEPLOYED_ON=$(date +%s)

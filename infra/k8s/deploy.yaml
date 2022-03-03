@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: @SVC_NAME@
+  name: @SVC_NAME@
+  namespace: @NAMESPACE@
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: @SVC_NAME@
+  template:
+    metadata:
+      labels:
+        app: @SVC_NAME@
+    spec:
+      containers:
+      - image: gcr.io/dp2-admin/github.com/mozilla-it/@SVC_NAME@:@SHORT_SHA@
+        imagePullPolicy: Always
+        name: @SVC_NAME@
+        env:
+          - name: GOOGLE_APPLICATION_CREDENTIALS
+            value: "/opt/secrets/creds.json"
+          - name: PROJECT
+            value: "@PROJECT@"
+          - name: GOOGLE_CLOUD_PROJECT
+            value: "@GOOGLE_CLOUD_PROJECT@"
+          - name: JBI_CREDENTIALS
+            value: "/jbi/secrets/creds.json"
+          - name: JIRA_BASE_URL
+            value: "@JIRA_BASE_URL@"
+          - name: BUGZILLA_BASE_URL
+            value: "@BUGZILLA_BASE_URL@"
+        volumeMounts:
+        - name: gcpcreds
+          mountPath: "/opt/secrets"
+          readOnly: true
+        - name: jbicreds
+          mountPath: "/jbi/secrets"
+          readOnly: true
+        ports:
+        - containerPort: 5000
+          protocol: TCP
+        livenessProbe:
+          exec:
+            command:
+            - echo
+        readinessProbe:
+          exec:
+            command:
+            - echo
+      volumes:
+      - name: gcpcreds
+        secret:
+          secretName: @SECRET_NAME@
+          items:
+          - key: creds.json
+            path: creds.json
+      - name: jbicreds
+        secret:
+          secretName: @SECRET_NAME_JBI@
+          items:
+          - key: creds.json
+            path: creds.json
