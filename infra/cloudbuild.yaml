@@ -1,7 +1,6 @@
 steps:
 - name: 'docker/compose:1.19.0'
-  entrypoint: 'bash'
-  args: [ '-c', 'docker-compose -f ./docker-compose.yaml -f ./tests/infra/docker-compose.test.yaml build --build-arg userid=10001 --build-arg groupid=10001 -t gcr.io/$PROJECT_ID/github.com/mozilla-it/$REPO_NAME:$SHORT_SHA']
+  args: ['-f ./docker-compose.yaml -f ./tests/infra/docker-compose.test.yaml build --build-arg userid=10001 --build-arg groupid=10001 -t gcr.io/$PROJECT_ID/github.com/mozilla-it/$REPO_NAME:$SHORT_SHA']
 - name: "docker"
   args: ["push", "gcr.io/$PROJECT_ID/github.com/mozilla-it/$REPO_NAME:$SHORT_SHA"]
 - name: 'gcr.io/cloud-builders/gcloud'
