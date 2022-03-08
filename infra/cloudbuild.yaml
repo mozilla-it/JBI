@@ -1,6 +1,9 @@
 steps:
 - name: 'docker/compose'
   args: ['up', '-d']
+  env:
+    - 'REPO_NAME=$REPO_NAME'
+    - 'SHORT_SHA=$SHORT_SHA'
 - name: "docker"
   args: ["push", "gcr.io/$PROJECT_ID/github.com/mozilla-it/$REPO_NAME:$SHORT_SHA"]
 - name: 'gcr.io/cloud-builders/gcloud'
