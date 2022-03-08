@@ -8,8 +8,8 @@ if [[ ! "$BRANCH_NAME" = "deploy" ]]; then
 	exit 0
 fi
 
-# DEFAULT TO dev
-ENV=dev
+# DEFAULT TO stage
+ENV=stage
 DOMAIN=api.data.allizom.org
 JIRA_BASE_URL=https://mozit-test.atlassian.net
 BUGZILLA_BASE_URL=https://bugzilla-dev.allizom.org/
