@@ -1,6 +1,7 @@
 version: "3.8"
 services:
   web:
+    image: $REPO_NAME:$SHORT_SHA
     build:
       context: .
       dockerfile: ./infra/Dockerfile
