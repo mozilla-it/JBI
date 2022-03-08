@@ -3,7 +3,7 @@
 set -ex
 
 # IS DEPLOYABLE BRANCH?
-if [[ ! "$BRANCH_NAME" = "main" && ! "$BRANCH_NAME" = "prod" ]]; then
+if [[ ! "$BRANCH_NAME" = "deploy" ]]; then
 	echo "$BRANCH_NAME is not a deployable branch. Stopping."
 	exit 0
 fi
@@ -29,6 +29,10 @@ NAMESPACE=jira-bugzilla-integration
 SVC_NAME=jira-bugzilla-integration
 SECRET_NAME=jbi-service-account-secrets
 SECRET_NAME_JBI=jbi-secrets
+SUBDOMAIN=bugzilla-webhook
+
+FULL_DOMAIN=${SUBDOMAIN}.${DOMAIN}
+
 
 # GCLOUD SETUP
 gcloud config set project "${PROJ_ENV}"
@@ -42,6 +46,13 @@ cp infra/k8s/ns.yaml infra/k8s/ns-${PROJ_ENV}.yaml
 sed -i -e "s|@NAMESPACE@|$NAMESPACE|g" infra/k8s/ns-${PROJ_ENV}.yaml
 kubectl apply -f infra/k8s/ns-${PROJ_ENV}.yaml
 
+# K8 SERVICE
+cp infra/k8s/svc.yaml infra/k8s/svc-${PROJ_ENV}.yaml
+sed -i -e "s|@SVC_NAME@|$SVC_NAME|g" -e "s|@NAMESPACE@|$NAMESPACE|g" infra/k8s/svc-${PROJ_ENV}.yaml
+kubectl apply -f infra/k8s/svc-${PROJ_ENV}.yaml
+
+set +x
+
 # K8 SECRET
 cp infra/k8s/secret.txt infra/k8s/secret-${PROJ_ENV}.json
 sed -i -e "s|@NAMESPACE@|$NAMESPACE|g" -e "s|@SECRET_NAME@|$SECRET_NAME|g" -e "s|@SECRET_JSON_VALUE@|$(gcloud beta secrets versions access latest --secret=${SECRET_NAME} --project=${PROJ_ENV})|g" infra/k8s/secret-${PROJ_ENV}.json
@@ -52,10 +63,41 @@ cp infra/k8s/secret.txt infra/k8s/secret-jbi-${PROJ_ENV}.json
 sed -i -e "s|@NAMESPACE@|$NAMESPACE|g" -e "s|@SECRET_NAME@|$SECRET_NAME_JBI|g" -e "s|@SECRET_JSON_VALUE@|$(gcloud beta secrets versions access latest --secret=${SECRET_NAME_JBI} --project=${PROJ_ENV})|g" infra/k8s/secret-jbi-${PROJ_ENV}.json
 kubectl apply -f infra/k8s/secret-jbi-${PROJ_ENV}.json
 
+set -x
+
+# K8 INGRESS
+cp infra/k8s/ing.yaml infra/k8s/ing-${PROJ_ENV}.yaml
+sed -i -e "s|@SVC_NAME@|$SVC_NAME|g" -e "s|@FULL_DOMAIN@|$FULL_DOMAIN|g" -e "s|@NAMESPACE@|$NAMESPACE|g" infra/k8s/ing-${PROJ_ENV}.yaml
+kubectl apply -f infra/k8s/ing-${PROJ_ENV}.yaml
+
+# K8 CERT
+cp infra/k8s/cert.yaml infra/k8s/cert-${PROJ_ENV}.yaml
+sed -i -e "s|@SVC_NAME@|$SVC_NAME|g" -e "s|@FULL_DOMAIN@|$FULL_DOMAIN|g" infra/k8s/cert-${PROJ_ENV}.yaml
+kubectl apply -f infra/k8s/cert-${PROJ_ENV}.yaml
+
 # K8 DEPLOYMENT
 cp infra/k8s/deploy.yaml infra/k8s/deploy-${PROJ_ENV}.yaml
 sed -i -e "s|@SHORT_SHA@|$SHORT_SHA|g" -e "s|@NAMESPACE@|$NAMESPACE|g" -e "s|@SVC_NAME@|$SVC_NAME|g" -e "s|@PROJECT@|${PROJ_ENV}|g" -e "s|@GOOGLE_CLOUD_PROJECT@|$PROJ_ENV|g" -e "s|@SECRET_NAME@|$SECRET_NAME|g" -e "s|@SECRET_NAME_JBI@|$SECRET_NAME_JBI|g" -e "s|@JIRA_EVENT_SERVICE_URL@|$JIRA_EVENT_SERVICE_URL|g" -e "s|@TO_JIRA_PROJECT@|$TO_JIRA_PROJECT|g" -e "s|@JIRA_BASE_URL@|$JIRA_BASE_URL|g" -e "s|@BUGZILLA_BASE_URL@|$BUGZILLA_BASE_URL|g" infra/k8s/deploy-${PROJ_ENV}.yaml
 kubectl apply -f infra/k8s/deploy-${PROJ_ENV}.yaml
+
+# LB + IP LOGIC
+NEW_IP=`kubectl get ingress --namespace ${NAMESPACE} ${SVC_NAME}-ing -o jsonpath='{.status.loadBalancer.ingress[0].ip}'`
+OLD_IP=`gcloud --project=${PROJ_ENV} dns record-sets list --zone="${ENV_ZONE}" | grep ^${FULL_DOMAIN} | sed "s/^.* //"`
+if [ "$OLD_IP" == "$NEW_IP" ]; then
+  echo "No ingress IP change. No DNS action needed."
+else
+  if [ "$OLD_IP" == "" ]; then
+      echo "No existing DNS record! Adding a new one."
+  elif [ "$OLD_IP" != "$NEW_IP" ]; then
+      echo "Ingress ip has changed! Deleting and readding."
+      gcloud --project=${PROJ_ENV} dns record-sets transaction start --zone="${ENV_ZONE}"
+      gcloud --project=${PROJ_ENV} dns record-sets transaction remove $OLD_IP --name="${FULL_DOMAIN}" --ttl="30" --type="A" --zone="${ENV_ZONE}"
+      gcloud --project=${PROJ_ENV} dns record-sets transaction execute --zone="${ENV_ZONE}"
+  fi
+  gcloud --project=${PROJ_ENV} dns record-sets transaction start --zone="${ENV_ZONE}"
+  gcloud --project=${PROJ_ENV} dns record-sets transaction add $NEW_IP --name="${FULL_DOMAIN}" --ttl="30" --type="A" --zone="${ENV_ZONE}"
+  gcloud --project=${PROJ_ENV} dns record-sets transaction execute --zone="${ENV_ZONE}"
+fi
 
 # FIN DEPLOYMENT
 kubectl -n${SVC_NAME} set env deployments/${SVC_NAME} DEPLOYED_ON=$(date +%s)

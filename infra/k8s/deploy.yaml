@@ -40,16 +40,18 @@ spec:
           mountPath: "/jbi/secrets"
           readOnly: true
         ports:
-        - containerPort: 5000
+        - containerPort: 8000
           protocol: TCP
         livenessProbe:
-          exec:
-            command:
-            - echo
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
         readinessProbe:
-          exec:
-            command:
-            - echo
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
       volumes:
       - name: gcpcreds
         secret:
