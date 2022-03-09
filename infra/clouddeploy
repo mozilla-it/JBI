@@ -27,9 +27,9 @@ PROJ_ENV=mozilla-api-${ENV}
 ENV_ZONE=mozilla-api-${ENV}-zone
 NAMESPACE=jira-bugzilla-integration
 SVC_NAME=jira-bugzilla-integration
-SECRET_NAME=jbi-service-account-secrets
-SECRET_NAME_JBI=jbi-secrets
-SUBDOMAIN=bugzilla-webhook
+SECRET_NAME=api-service-account-secrets
+SECRET_NAME_JBI=jira-bugzilla-secrets
+SUBDOMAIN=jira-bugzilla-integration
 
 FULL_DOMAIN=${SUBDOMAIN}.${DOMAIN}
 
